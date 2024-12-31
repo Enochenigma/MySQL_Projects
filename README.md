@@ -1,1 +1,1 @@
-# MySQL_Projects
+# SQL_Projects

@@ -1,66 +1,83 @@
 -- SQL Project - Data Cleaning
 
+-- ==========================================
+-- Layoffs Data Cleaning Script (SQL Server)
+-- ==========================================
+
 -- https://www.kaggle.com/datasets/swaptr/layoffs-2022 
 
--- STEP 1 
--- Create a staging table. (in case we run into issues while cleaning) 
--- Staging table creation was because the data needed to be validated and transformed before being loaded into the main table.
-
 -- STEP 1: Create a staging table for safe data transformation
-CREATE TABLE layoffs_staging AS
-SELECT * FROM layoffs;
+SELECT * INTO layoffs_staging FROM layoffs;
 
--- STEP 2: Remove exact duplicate records
-DELETE FROM layoffs_staging
-WHERE rowid NOT IN (
-    SELECT MIN(rowid)
+-- STEP 2: Remove exact duplicate records using ROW_NUMBER
+WITH CTE AS (
+    SELECT *,
+           ROW_NUMBER() OVER (
+               PARTITION BY company, location, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions
+               ORDER BY (SELECT NULL)
+           ) AS rn
     FROM layoffs_staging
-    GROUP BY company, location, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions
-);
+)
+DELETE FROM CTE WHERE rn > 1;
 
 -- STEP 3: Handle missing values
 
--- Convert empty 'industry' values to NULL
+-- Replace empty or NULL industry with NULL
 UPDATE layoffs_staging
 SET industry = NULL
 WHERE industry = '' OR industry IS NULL;
 
--- Fill missing industry values using the same company's existing data
-UPDATE layoffs_staging t1
+-- Fill missing industries using other rows from the same company
+UPDATE t1
 SET t1.industry = t2.industry
 FROM layoffs_staging t1
 JOIN layoffs_staging t2
-ON t1.company = t2.company
-WHERE t1.industry IS NULL
-  AND t2.industry IS NOT NULL;
+  ON t1.company = t2.company
+WHERE t1.industry IS NULL AND t2.industry IS NOT NULL;
 
--- Set missing 'stage' values to 'Unknown'
+-- Replace NULL in stage with 'Unknown'
 UPDATE layoffs_staging
 SET stage = 'Unknown'
 WHERE stage IS NULL;
 
 -- STEP 4: Standardize text data
 
--- Remove trailing dots from country names
+-- Remove trailing period from country names
 UPDATE layoffs_staging
-SET country = TRIM(TRAILING '.' FROM country);
+SET country = 
+    CASE 
+        WHEN RIGHT(country, 1) = '.' THEN LEFT(country, LEN(country) - 1)
+        ELSE country
+    END;
 
--- Standardize 'Crypto' industry name
+-- Normalize crypto industry naming
 UPDATE layoffs_staging
 SET industry = 'Crypto'
 WHERE industry IN ('Crypto Currency', 'CryptoCurrency');
 
 -- STEP 5: Convert and standardize date format
+
+-- Convert string to DATE using TRY_CAST
 UPDATE layoffs_staging
-SET date = STR_TO_DATE(date, '%m/%d/%Y'); 
+SET date = TRY_CAST(date AS DATE);
 
+-- Alter column type to DATE (if needed)
 ALTER TABLE layoffs_staging
-MODIFY COLUMN date DATE;
+ALTER COLUMN date DATE;
 
--- STEP 6: Remove irrelevant rows where no useful layoff data exists
+-- STEP 6: Remove rows with no layoff data
 DELETE FROM layoffs_staging
 WHERE total_laid_off IS NULL AND percentage_laid_off IS NULL;
 
--- STEP 7: Review cleaned data
-SELECT * FROM layoffs_staging;
+-- STEP 7: Create a permanent cleaned table
+IF OBJECT_ID('dbo.layoffs_cleaned', 'U') IS NOT NULL
+    DROP TABLE dbo.layoffs_cleaned;
+
+SELECT * INTO dbo.layoffs_cleaned FROM layoffs_staging;
+
+-- (Optional) STEP 8: Create an index to improve performance
+CREATE NONCLUSTERED INDEX idx_company_date ON dbo.layoffs_cleaned(company, date);
+
+-- STEP 9: Review final cleaned data
+SELECT * FROM dbo.layoffs_cleaned;
 

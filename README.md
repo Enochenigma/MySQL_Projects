@@ -5,82 +5,75 @@ This project focuses on **cleaning and standardizing** the **2022 Layoffs Datase
 The dataset provides insights into **global layoffs** across industries, including details like:  
 📌 Company | Location | Industry | Total Laid Off | % Laid Off | Funding Raised | Date  
 
-### **🔍 Key Objectives**  
-✅ Remove duplicate records  
-✅ Handle missing and inconsistent data  
-✅ Standardize text and date formats  
-✅ Ensure data integrity for accurate analysis  
+---
+
+## 📂 File
+
+- `layoffs_data_cleaning.sql` – Main SQL script for transforming raw layoff data.
 
 ---
 
-## 🏗️ Data Issues & Fixes  
+## ✅ Cleaning Steps
 
-### **1 Duplicate Records**  
-- Identified and removed exact duplicates using `ROW_NUMBER()`.  
+1. **Create a staging table**  
+   - Makes a working copy of the raw `layoffs` table (`layoffs_staging`).
 
-### **2 Handling Missing Values**  
-- **Industry** → Filled using data from the same company.  
-- **Stage** → Replaced `NULL` values with `"Unknown"`.  
-- **Total Laid Off & % Laid Off** → Kept only if at least one field had valid data.  
-- **Funding Raised** → Left as `NULL` since not all companies raise funds.  
+2. **Remove duplicate rows**  
+   - Uses `ROW_NUMBER()` to eliminate exact duplicates based on key columns.
 
-### **3 Standardization & Formatting**  
-- **Industry Names** → Standardized variations (e.g., `"Crypto Currency"` → `"Crypto"`).  
-- **Country Names** → Removed trailing dots and spaces.  
-- **Date Format** → Converted from `MM/DD/YYYY` to `YYYY-MM-DD`.  
+3. **Handle missing values**  
+   - Replaces empty or null values in the `industry` and `stage` columns.
+   - Fills missing industries by inferring from the same company.
+
+4. **Standardize text fields**  
+   - Removes trailing punctuation in `country`.
+   - Normalizes variations of the "Crypto" industry label.
+
+5. **Convert date formats**  
+   - Converts `date` strings to `DATE` data type using `TRY_CAST`.
+
+6. **Drop irrelevant rows**  
+   - Removes records with no layoff data (`total_laid_off` and `percentage_laid_off` both null).
+
+7. **Create a cleaned table**  
+   - Outputs results to a new permanent table: `layoffs_cleaned`.
+
+8. **Create index (optional)**  
+   - Adds a nonclustered index on `company` and `date` to optimize query performance.
 
 ---
 
-## 💾 SQL Query for Data Cleaning  
+## 📊 Integration with Visualization Tools
 
-```sql
--- STEP 1: Create a staging table for safe data transformation
-CREATE TABLE layoffs_staging AS
-SELECT * FROM layoffs;
+You can connect the `layoffs_cleaned` table to BI tools like:
 
--- STEP 2: Remove exact duplicate records
-DELETE FROM layoffs_staging
-WHERE rowid NOT IN (
-    SELECT MIN(rowid)
-    FROM layoffs_staging
-    GROUP BY company, location, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions
-);
+- **Power BI**
+  - Use *Get Data > SQL Server*
+  - Choose *DirectQuery* or *Import* mode
+- **Tableau**
+  - Use *Connect > Microsoft SQL Server*
 
--- STEP 3: Handle missing values
-UPDATE layoffs_staging
-SET industry = NULL
-WHERE industry = '' OR industry IS NULL;
+---
 
-UPDATE layoffs_staging t1
-SET t1.industry = t2.industry
-FROM layoffs_staging t1
-JOIN layoffs_staging t2
-ON t1.company = t2.company
-WHERE t1.industry IS NULL AND t2.industry IS NOT NULL;
+## ⚙ Requirements
 
-UPDATE layoffs_staging
-SET stage = 'Unknown'
-WHERE stage IS NULL;
+- SQL Server 2012 or later (for `TRY_CAST` and `ROW_NUMBER`)
+- Raw data stored in a table named `layoffs`
 
--- STEP 4: Standardize text data
-UPDATE layoffs_staging
-SET country = TRIM(TRAILING '.' FROM country);
+---
 
-UPDATE layoffs_staging
-SET industry = 'Crypto'
-WHERE industry IN ('Crypto Currency', 'CryptoCurrency');
+## 🔁 Optional Extensions
 
--- STEP 5: Convert and standardize date format
-UPDATE layoffs_staging
-SET date = STR_TO_DATE(date, '%m/%d/%Y'); 
+- Automate refresh using SQL Server Agent ( Creating a stored procedure) 
+- Join other company details that give more insight into layoffs like (COmpany financials & sector data)
+- Publish a live dashboard with Power BI or Tableau
 
-ALTER TABLE layoffs_staging
-MODIFY COLUMN date DATE;
+---
 
--- STEP 6: Remove irrelevant rows with no useful layoff data
-DELETE FROM layoffs_staging
-WHERE total_laid_off IS NULL AND percentage_laid_off IS NULL;
+## Author
 
--- STEP 7: Review cleaned data
-SELECT * FROM layoffs_staging;
+Created by Sanni Eshiofuneh   
+Business Intelligence | Data Analysis | SQL Automation
+
+
 
